@@ -1,4 +1,4 @@
-import type { PlayerId, TimerConfig } from './types';
+import type { PlayerId, TimerConfig } from './shared';
 
 export interface ClockState {
   config: TimerConfig;

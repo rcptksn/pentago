@@ -4,31 +4,41 @@ import { createServer, type ServerResponse } from 'node:http';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer, type WebSocket as WebSocketConnection } from 'ws';
-import { clockView, createClock, pauseClock, remaining, resumeClock, sanitizeTimer, beginSet, completeTurn, type ClockState } from '../src/engine/clock';
 import {
-  advanceMatch,
-  awardTimeout,
-  createMatch,
-  placeMarble,
-  rotatePiece,
-  sanitizeSetsToWin,
-  turnPlayer,
-} from '../src/engine/match';
-import type { MatchState, PlayerId, TimerConfig } from '../src/engine/types';
+  beginSet,
+  clockView,
+  completeTurn,
+  createClock,
+  pauseClock,
+  remaining,
+  resumeClock,
+  sanitizeTimer,
+  type ClockState,
+} from '../src/engine/clock';
+import type { GameId, PlayerId, TimerConfig } from '../src/engine/shared';
+import { pickOtherCharacter, sanitizeCharacterId, type CharacterId } from '../src/games/abluka/characters';
+import * as abluka from '../src/games/abluka/engine/match';
+import type { MatchState as AblukaMatch } from '../src/games/abluka/engine/types';
+import * as pentago from '../src/games/pentago/engine/match';
+import type { MatchState as PentagoMatch } from '../src/games/pentago/engine/types';
 import type { ClientMessage, OpenRoom, ServerMessage } from '../src/net/protocol';
 
 const PORT = Number(process.env.PORT) || 3001;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+type AnyMatch = PentagoMatch | AblukaMatch;
+
 interface Room {
   code: string;
   title: string;
+  gameId: GameId;
   names: [string, string | null];
+  characters: [CharacterId | null, CharacterId | null];
   tokens: [string, string | null];
   sockets: [WebSocketConnection | null, WebSocketConnection | null];
   timer: TimerConfig;
   setsToWin: number;
-  match: MatchState | null;
+  match: AnyMatch | null;
   clock: ClockState | null;
   revision: number;
   disconnectedAt: [number | null, number | null];
@@ -37,7 +47,7 @@ interface Room {
 
 const rooms = new Map<string, Room>();
 const seats = new WeakMap<WebSocketConnection, { code: string; player: PlayerId }>();
-const watchers = new Set<WebSocketConnection>();
+const watchers = new Map<WebSocketConnection, GameId>();
 
 function send(socket: WebSocketConnection, message: ServerMessage) {
   if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
@@ -49,14 +59,19 @@ function sanitizeName(name: unknown, fallback: string, max = 18): string {
   return clean || fallback;
 }
 
-function openRooms(): OpenRoom[] {
+function sanitizeGameId(value: unknown): GameId {
+  return value === 'abluka' ? 'abluka' : 'pentago';
+}
+
+function openRooms(gameId: GameId): OpenRoom[] {
   const list: OpenRoom[] = [];
   for (const room of rooms.values()) {
-    if (room.names[1] || !room.sockets[0]) continue;
+    if (room.gameId !== gameId || room.names[1] || !room.sockets[0]) continue;
     list.push({
       code: room.code,
       name: room.title,
       host: room.names[0],
+      gameId: room.gameId,
       setsToWin: room.setsToWin,
       timer: room.timer,
     });
@@ -64,14 +79,18 @@ function openRooms(): OpenRoom[] {
   return list.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
 }
 
-function publishLobby() {
-  const message: ServerMessage = { type: 'rooms', rooms: openRooms() };
-  for (const socket of watchers) {
-    if (socket.readyState !== WebSocket.OPEN) {
-      watchers.delete(socket);
-      continue;
+function publishLobby(gameId?: GameId) {
+  const targets = gameId ? ([gameId] as GameId[]) : (['pentago', 'abluka'] as GameId[]);
+  for (const id of targets) {
+    const message: ServerMessage = { type: 'rooms', gameId: id, rooms: openRooms(id) };
+    for (const [socket, watched] of watchers) {
+      if (watched !== id) continue;
+      if (socket.readyState !== WebSocket.OPEN) {
+        watchers.delete(socket);
+        continue;
+      }
+      send(socket, message);
     }
-    send(socket, message);
   }
 }
 
@@ -85,6 +104,12 @@ function bothConnected(room: Room): boolean {
   return Boolean(room.sockets[0] && room.sockets[1]);
 }
 
+function turnPlayer(room: Room, match: AnyMatch): PlayerId {
+  return room.gameId === 'abluka'
+    ? abluka.turnPlayer(match as AblukaMatch)
+    : pentago.turnPlayer(match as PentagoMatch);
+}
+
 function broadcast(room: Room) {
   if (!room.match) return;
   room.revision += 1;
@@ -93,12 +118,18 @@ function broadcast(room: Room) {
   for (const player of [0, 1] as const) {
     const socket = room.sockets[player];
     if (!socket) continue;
+    const characters =
+      room.gameId === 'abluka' && room.characters[0] && room.characters[1]
+        ? ([room.characters[0], room.characters[1]] as [CharacterId, CharacterId])
+        : undefined;
     send(socket, {
       type: 'state',
       code: room.code,
+      gameId: room.gameId,
       player,
       revision: room.revision,
       names: [room.names[0], room.names[1] ?? 'Rakip'],
+      characters,
       match: room.match,
       clock: room.clock ? clockView(room.clock, now) : null,
       connected,
@@ -106,14 +137,24 @@ function broadcast(room: Room) {
   }
 }
 
-function settleClock(room: Room, previous: MatchState, next: MatchState) {
+function settleClock(room: Room, previous: AnyMatch, next: AnyMatch) {
   if (!room.clock) return;
   const now = Date.now();
   if (next.set.winner || next.status !== 'playing') {
     room.clock = pauseClock(room.clock, now);
     return;
   }
-  if (previous.set.phase === 'rotate' && next.set.phase === 'place' && !next.set.winner) {
+  if (room.gameId === 'pentago') {
+    const prev = previous as PentagoMatch;
+    const cur = next as PentagoMatch;
+    if (prev.set.phase === 'rotate' && cur.set.phase === 'place' && !cur.set.winner) {
+      room.clock = completeTurn(room.clock, now);
+    }
+    return;
+  }
+  const prev = previous as AblukaMatch;
+  const cur = next as AblukaMatch;
+  if (prev.set.phase === 'block' && cur.set.phase === 'move' && !cur.set.winner) {
     room.clock = completeTurn(room.clock, now);
   }
 }
@@ -130,8 +171,11 @@ function ensureRunning(room: Room) {
 
 function startMatch(room: Room) {
   const now = Date.now();
-  room.match = createMatch(Math.random, room.setsToWin);
-  room.clock = createClock(room.timer, turnPlayer(room.match), now);
+  room.match =
+    room.gameId === 'abluka'
+      ? abluka.createMatch(Math.random, room.setsToWin)
+      : pentago.createMatch(Math.random, room.setsToWin);
+  room.clock = createClock(room.timer, turnPlayer(room, room.match), now);
   if (!bothConnected(room)) room.clock = pauseClock(room.clock, now);
 }
 
@@ -151,21 +195,28 @@ function attach(socket: WebSocketConnection, room: Room, player: PlayerId) {
 function handle(socket: WebSocketConnection, message: ClientMessage) {
   if (message.type === 'lobby') {
     if (seats.has(socket)) return;
-    watchers.add(socket);
-    send(socket, { type: 'rooms', rooms: openRooms() });
+    const gameId = sanitizeGameId(message.gameId);
+    watchers.set(socket, gameId);
+    send(socket, { type: 'rooms', gameId, rooms: openRooms(gameId) });
     return;
   }
 
   if (message.type === 'create') {
     const host = sanitizeName(message.name, 'Oyuncu 1');
+    const gameId = sanitizeGameId(message.gameId);
     const room: Room = {
       code: makeCode(),
       title: sanitizeName(message.roomName, host, 24),
+      gameId,
       names: [host, null],
+      characters: [gameId === 'abluka' ? sanitizeCharacterId(message.characterId) : null, null],
       tokens: [randomUUID(), null],
       sockets: [null, null],
       timer: sanitizeTimer(message.timer),
-      setsToWin: sanitizeSetsToWin(message.setsToWin),
+      setsToWin:
+        gameId === 'abluka'
+          ? abluka.sanitizeSetsToWin(message.setsToWin)
+          : pentago.sanitizeSetsToWin(message.setsToWin),
       match: null,
       clock: null,
       revision: 0,
@@ -174,9 +225,16 @@ function handle(socket: WebSocketConnection, message: ClientMessage) {
     };
     rooms.set(room.code, room);
     attach(socket, room, 0);
-    send(socket, { type: 'created', code: room.code, token: room.tokens[0]!, player: 0, name: room.title });
-    send(socket, { type: 'waiting', code: room.code, name: room.title });
-    publishLobby();
+    send(socket, {
+      type: 'created',
+      code: room.code,
+      token: room.tokens[0]!,
+      player: 0,
+      name: room.title,
+      gameId,
+    });
+    send(socket, { type: 'waiting', code: room.code, name: room.title, gameId });
+    publishLobby(gameId);
     return;
   }
 
@@ -185,21 +243,29 @@ function handle(socket: WebSocketConnection, message: ClientMessage) {
     const room = rooms.get(code);
     if (!room || !room.sockets[0]) {
       send(socket, { type: 'error', message: 'Oda bulunamadı.' });
-      if (watchers.has(socket)) send(socket, { type: 'rooms', rooms: openRooms() });
+      const watched = watchers.get(socket);
+      if (watched) send(socket, { type: 'rooms', gameId: watched, rooms: openRooms(watched) });
       return;
     }
     if (room.names[1]) {
       send(socket, { type: 'error', message: 'Oda dolu.' });
-      if (watchers.has(socket)) send(socket, { type: 'rooms', rooms: openRooms() });
+      const watched = watchers.get(socket);
+      if (watched) send(socket, { type: 'rooms', gameId: watched, rooms: openRooms(watched) });
       return;
     }
     room.names[1] = sanitizeName(message.name, 'Oyuncu 2');
+    if (room.gameId === 'abluka') {
+      const hostChar = room.characters[0] ?? 'recep';
+      let guest = sanitizeCharacterId(message.characterId, pickOtherCharacter(hostChar));
+      if (guest === hostChar) guest = pickOtherCharacter(hostChar);
+      room.characters[1] = guest;
+    }
     room.tokens[1] = randomUUID();
     attach(socket, room, 1);
     startMatch(room);
-    send(socket, { type: 'joined', code: room.code, token: room.tokens[1]!, player: 1 });
+    send(socket, { type: 'joined', code: room.code, token: room.tokens[1]!, player: 1, gameId: room.gameId });
     broadcast(room);
-    publishLobby();
+    publishLobby(room.gameId);
     return;
   }
 
@@ -215,10 +281,10 @@ function handle(socket: WebSocketConnection, message: ClientMessage) {
       return;
     }
     attach(socket, room, player);
-    send(socket, { type: 'joined', code: room.code, token: message.token, player });
+    send(socket, { type: 'joined', code: room.code, token: message.token, player, gameId: room.gameId });
     if (!room.match) {
-      send(socket, { type: 'waiting', code: room.code, name: room.title });
-      publishLobby();
+      send(socket, { type: 'waiting', code: room.code, name: room.title, gameId: room.gameId });
+      publishLobby(room.gameId);
     } else broadcast(room);
     return;
   }
@@ -236,7 +302,7 @@ function handle(socket: WebSocketConnection, message: ClientMessage) {
     room.sockets[0]?.close();
     room.sockets[1]?.close();
     rooms.delete(room.code);
-    publishLobby();
+    publishLobby(room.gameId);
     return;
   }
 
@@ -245,7 +311,13 @@ function handle(socket: WebSocketConnection, message: ClientMessage) {
     return;
   }
 
-  if (message.type === 'place' || message.type === 'rotate') {
+  const isPentagoMove = message.type === 'place' || message.type === 'rotate';
+  const isAblukaMove = message.type === 'abluka-move' || message.type === 'abluka-block';
+  if (isPentagoMove || isAblukaMove) {
+    if ((isPentagoMove && room.gameId !== 'pentago') || (isAblukaMove && room.gameId !== 'abluka')) {
+      send(socket, { type: 'error', message: 'Bu hamle bu oyun için geçersiz.' });
+      return;
+    }
     if (!bothConnected(room)) {
       send(socket, { type: 'error', message: 'Rakip bağlı değil.' });
       broadcast(room);
@@ -255,14 +327,15 @@ function handle(socket: WebSocketConnection, message: ClientMessage) {
       send(socket, { type: 'error', message: 'Bu set kapandı.' });
       return;
     }
-    if (turnPlayer(room.match) !== seat.player) {
+    if (turnPlayer(room, room.match) !== seat.player) {
       send(socket, { type: 'error', message: 'Sıra sende değil.' });
       return;
     }
-    const next =
-      message.type === 'place'
-        ? placeMarble(room.match, message.r, message.c)
-        : rotatePiece(room.match, message.q);
+    let next: AnyMatch | null = null;
+    if (message.type === 'place') next = pentago.placeMarble(room.match as PentagoMatch, message.r, message.c);
+    else if (message.type === 'rotate') next = pentago.rotatePiece(room.match as PentagoMatch, message.q);
+    else if (message.type === 'abluka-move') next = abluka.movePiece(room.match as AblukaMatch, message.r, message.c);
+    else if (message.type === 'abluka-block') next = abluka.placeBlock(room.match as AblukaMatch, message.r, message.c);
     if (!next) {
       send(socket, { type: 'error', message: 'Bu hamle geçersiz.' });
       broadcast(room);
@@ -275,11 +348,14 @@ function handle(socket: WebSocketConnection, message: ClientMessage) {
   }
 
   if (message.type === 'continue') {
-    const next = advanceMatch(room.match);
+    const next =
+      room.gameId === 'abluka'
+        ? abluka.advanceMatch(room.match as AblukaMatch)
+        : pentago.advanceMatch(room.match as PentagoMatch);
     if (next === room.match) return;
     room.match = next;
     if (room.clock && next.status === 'playing') {
-      room.clock = beginSet(room.clock, turnPlayer(next), Date.now());
+      room.clock = beginSet(room.clock, turnPlayer(room, next), Date.now());
       ensureRunning(room);
     }
     broadcast(room);
@@ -307,6 +383,8 @@ const FILE_TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
   '.json': 'application/json',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
 };
 
 function insideApp(file: string): boolean {
@@ -361,7 +439,7 @@ const server = createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Pentago sunucusu ${PORT} portunda`);
+  console.log(`Salon sunucusu ${PORT} portunda`);
 });
 
 wss.on('connection', (socket) => {
@@ -384,7 +462,7 @@ wss.on('connection', (socket) => {
     room.disconnectedAt[seat.player] = Date.now();
     if (room.clock?.running) room.clock = pauseClock(room.clock, Date.now());
     if (room.match) broadcast(room);
-    else publishLobby();
+    else publishLobby(room.gameId);
   });
 });
 
@@ -394,7 +472,10 @@ setInterval(() => {
     if (room.match && room.clock && room.clock.running && room.clock.active != null && !room.match.set.winner) {
       if (remaining(room.clock, room.clock.active, now) <= 0) {
         const winner = room.clock.active === 0 ? 1 : 0;
-        room.match = awardTimeout(room.match, winner);
+        room.match =
+          room.gameId === 'abluka'
+            ? abluka.awardTimeout(room.match as AblukaMatch, winner)
+            : pentago.awardTimeout(room.match as PentagoMatch, winner);
         room.clock = pauseClock(room.clock, now);
         broadcast(room);
       }
@@ -403,7 +484,7 @@ setInterval(() => {
     const lastSeen = Math.max(room.disconnectedAt[0] ?? room.createdAt, room.disconnectedAt[1] ?? room.createdAt);
     if (now - lastSeen > 120_000) {
       rooms.delete(room.code);
-      publishLobby();
+      publishLobby(room.gameId);
     }
   }
 }, 200);

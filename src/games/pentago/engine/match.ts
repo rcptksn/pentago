@@ -1,11 +1,8 @@
+import { sanitizeSetsToWin } from '../../../engine/shared';
 import { initialSet, tryPlace, tryRotate } from './rules';
 import type { Color, EndReason, MatchState, PlayerId, SetState } from './types';
 
-export function sanitizeSetsToWin(value: unknown): number {
-  const count = typeof value === 'number' ? value : Number(value);
-  if (count === 2 || count === 3 || count === 4 || count === 5) return count;
-  return 1;
-}
+export { sanitizeSetsToWin };
 
 export function createMatch(rng: () => number = Math.random, setsToWin = 1): MatchState {
   const blackPlayer: PlayerId = rng() < 0.5 ? 0 : 1;

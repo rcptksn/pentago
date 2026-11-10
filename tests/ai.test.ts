@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { chooseMove } from '../src/engine/ai';
-import { playMove } from '../src/engine/rules';
-import type { Board, Cell, SetState } from '../src/engine/types';
+import { chooseMove } from '../src/games/pentago/engine/ai';
+import { playMove } from '../src/games/pentago/engine/rules';
+import type { Board, Cell, SetState } from '../src/games/pentago/engine/types';
 
 function boardOf(rows: string[]): Board {
   return rows.map((row) =>

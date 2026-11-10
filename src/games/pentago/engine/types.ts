@@ -1,14 +1,10 @@
-export type Color = 'black' | 'white';
+import type { Color, Coord, PlayerId } from '../../../engine/shared';
+
+export type { Color, Coord, PlayerId, Difficulty, TimerConfig } from '../../../engine/shared';
+
 export type Cell = Color | null;
-export type PlayerId = 0 | 1;
 export type Phase = 'place' | 'rotate';
 export type EndReason = 'own-line' | 'opponent-line' | 'timeout' | 'full';
-export type Difficulty = 'easy' | 'medium' | 'hard';
-
-export interface Coord {
-  r: number;
-  c: number;
-}
 
 export type Board = Cell[][];
 
@@ -49,8 +45,3 @@ export interface MatchState {
   winner: PlayerId | null;
   set: SetState;
 }
-
-export type TimerConfig =
-  | { mode: 'off' }
-  | { mode: 'move'; seconds: number }
-  | { mode: 'total'; minutes: number; increment: number };

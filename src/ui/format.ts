@@ -1,5 +1,7 @@
 import type { ClockView } from '../engine/clock';
-import type { Color, EndReason, MoveRecord, TimerConfig } from '../engine/types';
+import type { Color, TimerConfig } from '../engine/shared';
+import type { EndReason as AblukaEndReason, MoveRecord as AblukaMove } from '../games/abluka/engine/types';
+import type { EndReason as PentagoEndReason, MoveRecord as PentagoMove } from '../games/pentago/engine/types';
 
 export const QUADRANT_NAMES = ['sol üst', 'sağ üst', 'sol alt', 'sağ alt'] as const;
 
@@ -36,7 +38,7 @@ export function colorName(color: Color): string {
 }
 
 export function squareName(r: number, c: number): string {
-  return `${'ABCDEF'[c]}${r + 1}`;
+  return `${'ABCDEFG'[c]}${r + 1}`;
 }
 
 export const SET_CHOICES = [1, 2, 3, 4, 5] as const;
@@ -50,15 +52,25 @@ export function setLabel(setsPlayed: number, over: boolean): string {
   return `Set ${setsPlayed + 1}`;
 }
 
-export function describeSet(reason: EndReason, winnerName: string | null): string {
+export function describePentagoSet(reason: PentagoEndReason, winnerName: string | null): string {
   if (reason === 'full' || !winnerName) return 'Tahta doldu. Set berabere.';
   if (reason === 'timeout') return `Süre doldu. Seti ${winnerName} aldı.`;
   if (reason === 'opponent-line') return `${winnerName} kazandı. Hamle rakibin beşlisini tamamladı.`;
   return `${winnerName} beşliyi tamamladı.`;
 }
 
-export function describeMove(index: number, move: MoveRecord): string {
+export function describeAblukaSet(reason: AblukaEndReason, winnerName: string): string {
+  if (reason === 'timeout') return `Süre doldu. Seti ${winnerName} aldı.`;
+  if (reason === 'mutual-lock') return `${winnerName} kazandı. Son hamle her iki taşı da ablukaya aldı.`;
+  return `${winnerName} kazandı. Rakip taşını hareket ettiremedi.`;
+}
+
+export function describePentagoMove(index: number, move: PentagoMove): string {
   return `${index + 1}. ${colorName(move.color)} ${squareName(move.place.r, move.place.c)} · ${QUADRANT_NAMES[move.quadrant]}`;
+}
+
+export function describeAblukaMove(index: number, move: AblukaMove): string {
+  return `${index + 1}. ${colorName(move.color)} ${squareName(move.from.r, move.from.c)}→${squareName(move.to.r, move.to.c)} · engel ${squareName(move.block.r, move.block.c)}`;
 }
 
 export function timerLabel(config: TimerConfig): string {
@@ -91,4 +103,8 @@ export function socketUrlFrom(domain: string | undefined, pageProtocol: string, 
 
 export function socketUrl(): string {
   return socketUrlFrom(import.meta.env.VITE_SOCKET_DOMAIN, location.protocol, location.host);
+}
+
+export function gameLabel(gameId: 'pentago' | 'abluka'): string {
+  return gameId === 'abluka' ? 'Abluka' : 'Pentago';
 }

@@ -7,12 +7,12 @@ const LINES = [
   'Geçmiş hamlelere itiraz edilmez.',
 ];
 
-export function Rules({ onClose }: { onClose: () => void }) {
+export function PentagoRules({ onClose }: { onClose: () => void }) {
   return (
     <div className="veil" role="dialog" aria-modal="true" aria-labelledby="rules-title">
       <article className="panel">
         <p className="eyebrow">Turnuva masası</p>
-        <h2 id="rules-title">Kurallar</h2>
+        <h2 id="rules-title">Pentago kuralları</h2>
         <ul className="rule-list">
           {LINES.map((line) => (
             <li key={line}>{line}</li>

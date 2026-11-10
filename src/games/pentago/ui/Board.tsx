@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { quadrantOrigin } from '../engine/board';
 import type { Board, Color, Coord, Phase } from '../engine/types';
-import { QUADRANT_NAMES, squareName } from './format';
+import { QUADRANT_NAMES, squareName } from '../../../ui/format';
 
 const ORIGINS = [0, 1, 2, 3].map((q) => quadrantOrigin(q));
 
@@ -93,29 +93,12 @@ export function BoardView({
                   className="spin-hit"
                   aria-label={`${QUADRANT_NAMES[q]} parçayı saat yönünde çevir`}
                   onClick={() => onRotate(q)}
-                >
-                  <Arrow />
-                </button>
+                />
               )}
             </div>
           );
         })}
       </div>
     </div>
-  );
-}
-
-function Arrow() {
-  return (
-    <svg className="arrow" viewBox="0 0 64 64" aria-hidden="true">
-      <path
-        d="M32 10a22 22 0 1 1-16 6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <path d="M14 10v10h10" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }

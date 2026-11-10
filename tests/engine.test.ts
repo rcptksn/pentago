@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { cellAfterRotation, quadrantIsEmpty, rotateQuadrant } from '../src/engine/board';
 import { beginSet, completeTurn, createClock, remaining } from '../src/engine/clock';
-import { advanceMatch, awardTimeout, colorOfPlayer, createMatch, playerOfColor, turnPlayer } from '../src/engine/match';
-import { hasRun, initialSet, outcomeAfterMove, playMove, tryPlace, tryRotate } from '../src/engine/rules';
-import type { Board, Cell, MatchState, PlayerId } from '../src/engine/types';
+import { cellAfterRotation, quadrantIsEmpty, rotateQuadrant } from '../src/games/pentago/engine/board';
+import { advanceMatch, awardTimeout, colorOfPlayer, createMatch, playerOfColor, turnPlayer } from '../src/games/pentago/engine/match';
+import { hasRun, initialSet, outcomeAfterMove, playMove, tryPlace, tryRotate } from '../src/games/pentago/engine/rules';
+import type { Board, Cell, MatchState, PlayerId } from '../src/games/pentago/engine/types';
 
 function boardOf(rows: string[]): Board {
   return rows.map((row) =>

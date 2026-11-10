@@ -1,14 +1,19 @@
 import { useState } from 'react';
 import type { LocalConfig } from '../App';
-import type { Difficulty } from '../engine/types';
-import { SET_CHOICES, setChoiceLabel, TIMER_PRESETS } from './format';
+import type { Difficulty, GameId } from '../engine/shared';
+import type { CharacterId } from '../games/abluka/characters';
+import { gameLabel, SET_CHOICES, setChoiceLabel, TIMER_PRESETS } from './format';
 
 export function Setup({
+  gameId,
   mode,
+  characters,
   onBack,
   onStart,
 }: {
+  gameId: GameId;
   mode: 'ai' | 'hotseat';
+  characters?: [CharacterId, CharacterId];
   onBack: () => void;
   onStart: (config: LocalConfig) => void;
 }) {
@@ -27,10 +32,12 @@ export function Setup({
           const timer = TIMER_PRESETS.find((item) => item.id === timerId)?.timer ?? { mode: 'off' };
           const left = you.trim().slice(0, 18) || (mode === 'ai' ? 'Sen' : 'Oyuncu 1');
           const right = other.trim().slice(0, 18) || (mode === 'ai' ? 'Bilgisayar' : 'Oyuncu 2');
-          onStart({ mode, names: [left, right], difficulty, timer, setsToWin });
+          onStart({ gameId, mode, names: [left, right], difficulty, timer, setsToWin, characters });
         }}
       >
-        <p className="eyebrow">{mode === 'ai' ? 'Bilgisayara karşı' : 'Aynı ekran'}</p>
+        <p className="eyebrow">
+          {gameLabel(gameId)} · {mode === 'ai' ? 'Bilgisayara karşı' : 'Aynı ekran'}
+        </p>
         <h2>{mode === 'ai' ? 'Rakibini seç' : 'İkiniz de oturun'}</h2>
         <label className="field">
           <span>{mode === 'ai' ? 'Senin adın' : 'Birinci oyuncu'}</span>
