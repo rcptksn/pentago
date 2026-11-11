@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { LocalConfig } from '../App';
 import type { Difficulty, GameId } from '../engine/shared';
-import type { CharacterId } from '../games/abluka/characters';
+import { characterById, type CharacterId } from '../games/abluka/characters';
 import { gameLabel, SET_CHOICES, setChoiceLabel, TIMER_PRESETS } from './format';
 
 export function Setup({
@@ -17,6 +17,7 @@ export function Setup({
   onBack: () => void;
   onStart: (config: LocalConfig) => void;
 }) {
+  const useCharacters = Boolean(characters);
   const [you, setYou] = useState(mode === 'ai' ? 'Sen' : 'Oyuncu 1');
   const [other, setOther] = useState(mode === 'ai' ? 'Bilgisayar' : 'Oyuncu 2');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
@@ -30,20 +31,29 @@ export function Setup({
         onSubmit={(event) => {
           event.preventDefault();
           const timer = TIMER_PRESETS.find((item) => item.id === timerId)?.timer ?? { mode: 'off' };
-          const left = you.trim().slice(0, 18) || (mode === 'ai' ? 'Sen' : 'Oyuncu 1');
-          const right = other.trim().slice(0, 18) || (mode === 'ai' ? 'Bilgisayar' : 'Oyuncu 2');
-          onStart({ gameId, mode, names: [left, right], difficulty, timer, setsToWin, characters });
+          const names: [string, string] = characters
+            ? [
+                characterById(characters[0])?.name ?? 'Oyuncu 1',
+                characterById(characters[1])?.name ?? (mode === 'ai' ? 'Bilgisayar' : 'Oyuncu 2'),
+              ]
+            : [
+                you.trim().slice(0, 18) || (mode === 'ai' ? 'Sen' : 'Oyuncu 1'),
+                other.trim().slice(0, 18) || (mode === 'ai' ? 'Bilgisayar' : 'Oyuncu 2'),
+              ];
+          onStart({ gameId, mode, names, difficulty, timer, setsToWin, characters });
         }}
       >
         <p className="eyebrow">
           {gameLabel(gameId)} · {mode === 'ai' ? 'Bilgisayara karşı' : 'Aynı ekran'}
         </p>
         <h2>{mode === 'ai' ? 'Rakibini seç' : 'İkiniz de oturun'}</h2>
-        <label className="field">
-          <span>{mode === 'ai' ? 'Senin adın' : 'Birinci oyuncu'}</span>
-          <input value={you} maxLength={18} onChange={(event) => setYou(event.target.value)} />
-        </label>
-        {mode === 'hotseat' && (
+        {!useCharacters && (
+          <label className="field">
+            <span>{mode === 'ai' ? 'Senin adın' : 'Birinci oyuncu'}</span>
+            <input value={you} maxLength={18} onChange={(event) => setYou(event.target.value)} />
+          </label>
+        )}
+        {!useCharacters && mode === 'hotseat' && (
           <label className="field">
             <span>İkinci oyuncu</span>
             <input value={other} maxLength={18} onChange={(event) => setOther(event.target.value)} />

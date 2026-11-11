@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ClockView } from '../engine/clock';
 import type { GameId, PlayerId, TimerConfig } from '../engine/shared';
-import type { CharacterId } from '../games/abluka/characters';
+import { characterById, type CharacterId } from '../games/abluka/characters';
 import * as abluka from '../games/abluka/engine/match';
 import type { MatchState as AblukaMatch } from '../games/abluka/engine/types';
 import { rotateQuadrant } from '../games/pentago/engine/board';
@@ -255,6 +255,9 @@ export function Online({
   }
 
   function playerName(): string {
+    if (characterId) {
+      return characterById(characterId)?.name.slice(0, 18) || 'Oyuncu';
+    }
     return name.trim().slice(0, 18) || 'Oyuncu';
   }
 
@@ -434,10 +437,12 @@ export function Online({
       >
         <p className="eyebrow">{gameLabel(gameId)} · iki cihaz</p>
         <h2>Açık odalar</h2>
-        <label className="field">
-          <span>Adın</span>
-          <input value={name} maxLength={18} onChange={(event) => setName(event.target.value)} />
-        </label>
+        {!characterId && (
+          <label className="field">
+            <span>Adın</span>
+            <input value={name} maxLength={18} onChange={(event) => setName(event.target.value)} />
+          </label>
+        )}
         {rooms.length === 0 ? (
           <p className="room-empty">Şu an açık oda yok. Bir oda kur, rakibin listeden seçsin.</p>
         ) : (
