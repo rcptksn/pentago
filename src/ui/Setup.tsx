@@ -81,7 +81,7 @@ export function Setup({
         </label>
         <div className="row">
           <button type="button" className="btn ghost" onClick={onBack}>
-            Geri
+            {characters ? 'Karakterler' : 'Geri'}
           </button>
           <button type="submit" className="btn primary">
             Masaya otur

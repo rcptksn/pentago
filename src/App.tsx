@@ -72,6 +72,10 @@ export function App() {
         <Online
           gameId={screen.gameId}
           characterId={screen.characterId}
+          onBack={() => {
+            if (screen.gameId === 'abluka') setScreen({ name: 'characters', mode: 'online' });
+            else setScreen({ name: 'home' });
+          }}
           onExit={() => setScreen({ name: 'home' })}
         />
       )}

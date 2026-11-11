@@ -62,10 +62,12 @@ interface Seat {
 export function Online({
   gameId,
   characterId,
+  onBack,
   onExit,
 }: {
   gameId: GameId;
   characterId?: CharacterId;
+  onBack: () => void;
   onExit: () => void;
 }) {
   const [phase, setPhase] = useState<'lobby' | 'wait' | 'play'>('lobby');
@@ -481,8 +483,8 @@ export function Online({
         </label>
         {notice && <p className="notice">{notice}</p>}
         <div className="row">
-          <button type="button" className="btn ghost" onClick={onExit}>
-            Geri
+          <button type="button" className="btn ghost" onClick={onBack}>
+            {characterId ? 'Karakterler' : 'Geri'}
           </button>
           <button type="submit" className="btn primary">
             Oda kur

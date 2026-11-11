@@ -17,9 +17,7 @@ export function CharacterSelect({
   const needTwo = mode === 'hotseat';
   const [step, setStep] = useState<0 | 1>(0);
   const [first, setFirst] = useState<CharacterId | null>(null);
-  const [second, setSecond] = useState<CharacterId | null>(null);
 
-  const active = step === 0 ? first : second;
   const title = needTwo
     ? step === 0
       ? 'Birinci oyuncu karakteri'
@@ -33,28 +31,17 @@ export function CharacterSelect({
 
   function choose(id: CharacterId) {
     if (step === 0) {
-      setFirst(id);
-      return;
-    }
-    if (id === first) return;
-    setSecond(id);
-  }
-
-  function continueFlow() {
-    if (step === 0) {
-      if (!first) return;
       if (needTwo) {
+        setFirst(id);
         setStep(1);
         return;
       }
-      onConfirm([first, pickOtherCharacter(first)]);
+      onConfirm([id, pickOtherCharacter(id)]);
       return;
     }
-    if (!first || !second) return;
-    onConfirm([first, second]);
+    if (!first || id === first) return;
+    onConfirm([first, id]);
   }
-
-  const canContinue = step === 0 ? first != null : second != null;
 
   return (
     <main className="setup-screen">
@@ -65,15 +52,13 @@ export function CharacterSelect({
         <div className="character-grid" role="listbox" aria-label="Karakterler">
           {ABLUKA_CHARACTERS.map((character) => {
             const taken = step === 1 && character.id === first;
-            const selected = active === character.id;
             return (
               <button
                 key={character.id}
                 type="button"
                 role="option"
-                aria-selected={selected}
                 disabled={taken}
-                className={`character-card${selected ? ' on' : ''}${taken ? ' taken' : ''}`}
+                className={`character-card${taken ? ' taken' : ''}`}
                 onClick={() => choose(character.id)}
               >
                 <img src={character.src} alt="" className="character-avatar" />
@@ -95,16 +80,13 @@ export function CharacterSelect({
             onClick={() => {
               if (step === 1) {
                 setStep(0);
-                setSecond(null);
+                setFirst(null);
                 return;
               }
               onBack();
             }}
           >
             Geri
-          </button>
-          <button type="button" className="btn primary" disabled={!canContinue} onClick={continueFlow}>
-            {needTwo && step === 0 ? 'Sonraki' : 'Devam'}
           </button>
         </div>
       </section>
